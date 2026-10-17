@@ -310,7 +310,7 @@ int main(int argc, char** argv) {
   eventsOut << "time_s,flight_time_s,kind,name,detail\n";
   std::ofstream traceOut(base + "_cpp_trace.csv");
   traceOut << "time_s,flight_time_s,accel_z_counts,accelNow,accelVel,accelAlt,fusionVel,fusionAlt,"
-              "baro_Alt,baro_Vel,offVert,altOK,rotnOK,radio_event\n";
+              "baro_Alt,baro_Vel,baro_baseAlt,baroTouchdown,offVert,altOK,rotnOK,radio_event\n";
 
   const uint32_t baroInterval = (uint32_t)(1e6 / o.baroHz);
   // micros() has been counting through setup() by the time loop() starts (startupTime = 10 s in Settings.txt).
@@ -392,18 +392,15 @@ int main(int argc, char** argv) {
       baro.newSamp = false;
 
       // HPR_Rocket_Flight_PC_V4_7_2.ino:1241-1245: end of flight
-      if (events.timeOut || events.touchdown) {
-        events.liftoff = false;
-        logChanges(before, radioBefore);
-        break;
-      }
+      if (events.timeOut || events.touchdown) {events.liftoff = false;}
     }
 
     logChanges(before, radioBefore);
     traceOut << nowSeconds << ',' << (fltTime.liftoff ? fltTime.timeCurrent * 1e-6 : 0.0) << ',' << accel.z << ','
              << accelNow << ',' << accelVel << ',' << accelAlt << ',' << fusionVel << ',' << fusionAlt << ','
-             << baro.Alt << ',' << baro.Vel << ',' << offVert << ',' << altOK << ',' << rotnOK << ','
+             << baro.Alt << ',' << baro.Vel << ',' << baro.baseAlt << ',' << (int)baroTouchdown << ',' << offVert << ',' << altOK << ',' << rotnOK << ','
              << (int)radio.event << '\n';
+    if (events.timeOut || events.touchdown) break;
   }
 
   std::printf("\nMax baro altitude: %.1f m (%.0f ft), max velocity: %.1f m/s\n", baro.maxAlt, baro.maxAlt * unitConvert, maxVelocity);
