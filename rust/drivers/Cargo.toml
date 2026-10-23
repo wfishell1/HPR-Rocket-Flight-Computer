@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 embedded-hal = "1.0"
+embedded-hal-mock = { version = "0.11", default-features = false, features = ["eh1"] }
