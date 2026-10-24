@@ -98,7 +98,7 @@ impl<I: I2c> Lsm6dsoxDriver<I> {
     fn parse(buf: &[u8; 12]) -> Sample {
         let word = |i: usize| i16::from_le_bytes([buf[i], buf[i+1]]);
 
-        Sample::new(Raw3::new(word(0), word(2), word(4)), Raw3::new(word(0), word(2), word(4)))
+        Sample::new(Raw3::new(word(0), word(2), word(4)), Raw3::new(word(6), word(8), word(10)))
     }
 
     pub fn accel_scale(&self) -> f32 { ACCEL_SCALE }
@@ -110,4 +110,121 @@ impl<I: I2c> Lsm6dsoxDriver<I> {
     pub fn gyro_saturation(&self) -> i16 { GYRO_SATURATION }
 
     pub fn sample_period_us(&self) -> u32 { SAMPLE_PERIOD_US }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use embedded_hal::i2c::ErrorKind;
+    use embedded_hal_mock::eh1::i2c::{Mock, Transaction};
+
+    const ADDR: u8 = 0x6A;
+
+    fn init_expectations() -> Vec<Transaction> {
+        vec![
+            Transaction::write_read(ADDR, vec![WHO_AM_I_ADDR], vec![WHO_AM_I_VAL]),
+            Transaction::write(ADDR, vec![CTRL3_C, 0x44]),
+            Transaction::write_read(ADDR, vec![CTRL3_C], vec![0x44]),
+            Transaction::write(ADDR, vec![CTRL2_G, 0b10001100]),
+            Transaction::write_read(ADDR, vec![CTRL2_G], vec![0b10001100]),
+            Transaction::write(ADDR, vec![CTRL1_XL, 0b10000100]),
+            Transaction::write_read(ADDR, vec![CTRL1_XL], vec![0b10000100]),
+        ]
+    }
+
+    #[test]
+    fn new_succeeds_with_correct_chip() {
+        let mut mock = Mock::new(&init_expectations());
+
+        let result = Lsm6dsoxDriver::new(mock.clone(), ADDR);
+
+        assert!(result.is_ok());
+        mock.done();
+    }
+
+    #[test]
+    fn new_fails_on_wrong_chip() {
+        let expectations = [
+            Transaction::write_read(ADDR, vec![WHO_AM_I_ADDR], vec![0x69]),
+        ];
+        let mut mock = Mock::new(&expectations);
+
+        let result = Lsm6dsoxDriver::new(mock.clone(), ADDR);
+
+        assert!(matches!(
+            result,
+            Err(Error::RegisterMismatch { expected: 0x6C, found: 0x69 })
+        ));
+        mock.done();
+    }
+
+    #[test]
+    fn new_fails_when_setting_does_not_stick() {
+        let expectations = [
+            Transaction::write_read(ADDR, vec![WHO_AM_I_ADDR], vec![WHO_AM_I_VAL]),
+            Transaction::write(ADDR, vec![CTRL3_C, 0x44]),
+            Transaction::write_read(ADDR, vec![CTRL3_C], vec![0x00]), // chip ignored the write
+        ];
+        let mut mock = Mock::new(&expectations);
+
+        let result = Lsm6dsoxDriver::new(mock.clone(), ADDR);
+
+        assert!(matches!(
+            result,
+            Err(Error::RegisterMismatch { expected: 0x44, found: 0x00 })
+        ));
+        mock.done();
+    }
+
+    #[test]
+    fn new_reports_bus_error() {
+        let expectations = [
+            Transaction::write_read(ADDR, vec![WHO_AM_I_ADDR], vec![0x00])
+                .with_error(ErrorKind::Other),
+        ];
+        let mut mock = Mock::new(&expectations);
+
+        let result = Lsm6dsoxDriver::new(mock.clone(), ADDR);
+
+        assert!(matches!(result, Err(Error::Bus(ErrorKind::Other))));
+        mock.done();
+    }
+
+    #[test]
+    fn parse_puts_bytes_in_right_places() {
+        //          gyro x   gyro y   gyro z   accel x  accel y  accel z
+        let buf = [1, 0,    2, 0,    3, 0,    4, 0,    5, 0,    6, 0];
+
+        let sample = Lsm6dsoxDriver::<Mock>::parse(&buf);
+
+        assert_eq!(sample.gyro(), Raw3::new(1, 2, 3));
+        assert_eq!(sample.accel(), Raw3::new(4, 5, 6));
+    }
+
+    #[test]
+    fn parse_handles_full_range() {
+        let buf = [0xFF, 0x7F,  0x00, 0x80,  0x01, 0x08,  0, 0,  0, 0,  0, 0];
+
+        let sample = Lsm6dsoxDriver::<Mock>::parse(&buf);
+
+        assert_eq!(sample.gyro(), Raw3::new(32767, -32768, 2049));
+    }
+
+    #[test]
+    fn read_returns_parsed_sample() {
+        let mut expectations = init_expectations();
+        expectations.push(Transaction::write_read(
+            ADDR,
+            vec![OUTX_L_G],
+            vec![1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0],
+        ));
+        let mut mock = Mock::new(&expectations);
+
+        let mut driver = Lsm6dsoxDriver::new(mock.clone(), ADDR).unwrap();
+        let sample = driver.read().unwrap();
+
+        assert_eq!(sample.gyro(), Raw3::new(1, 2, 3));
+        assert_eq!(sample.accel(), Raw3::new(4, 5, 6));
+        mock.done();
+    }
 }
