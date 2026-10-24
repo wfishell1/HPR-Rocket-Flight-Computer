@@ -2,3 +2,4 @@
 
 pub mod lsm6dsox;
 pub mod types;
+pub mod bus;
