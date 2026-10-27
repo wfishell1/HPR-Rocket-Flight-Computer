@@ -1,0 +1,42 @@
+time_s,flight_time_s,kind,name,detail
+2.059,0,RADIO_RATE,radioTimer.begin,interval_us=50000
+2.059,0,FLAG,preLiftoff,false
+2.059,0,FLAG,inFlight,true
+2.059,0,FLAG,liftoff,true
+2.059,0,RADIO_EVENT,Liftoff,1
+2.56,0.501,FLAG,falseLiftoffCheck,false
+3.465,1.406,FLAG,boosterBurnout,true
+3.465,1.406,FLAG,boosterBurnoutCheck,true
+3.465,1.406,RADIO_EVENT,Booster_Burnout,2
+3.54,1.481,FLAG,boosterBurnout,false
+3.54,1.481,FLAG,boosterBurnoutCheck,false
+3.54,1.481,RADIO_EVENT,Liftoff,1
+4.925,2.866,FLAG,boosterBurnout,true
+4.925,2.866,FLAG,boosterBurnoutCheck,true
+4.925,2.866,RADIO_EVENT,Booster_Burnout,2
+5.026,2.967,FLAG,boosterBurnoutCheck,false
+5.426,3.367,PYRO,fire,pyro1 (booster separation)
+5.426,3.367,FLAG,boosterSeparation,true
+5.426,3.367,RADIO_EVENT,Eject_Booster,8
+5.927,3.868,PYRO,off,pyro1 (booster separation)
+5.928,3.869,PYRO,fire,pyro2 (sustainer ignition)
+5.928,3.869,FLAG,sustainerFireCheck,true
+5.928,3.869,FLAG,sustainerFire,true
+5.928,3.869,RADIO_EVENT,Fire_Sustainer,9
+6.429,4.37,PYRO,off,pyro2 (sustainer ignition)
+13.439,11.38,PYRO,fire,pyro3 (apogee)
+13.439,11.38,FLAG,apogee,true
+13.439,11.38,FLAG,apogeeFire,true
+13.439,11.38,RADIO_EVENT,Fire_Apogee,4
+13.94,11.881,PYRO,off,pyro3 (apogee)
+16.439,14.38,SD,syncSD,
+38.28,36.221,PYRO,fire,pyro4 (main)
+38.28,36.221,FLAG,mainDeploy,true
+38.28,36.221,RADIO_EVENT,Fire_Mains,6
+38.781,36.722,PYRO,off,pyro4 (main)
+41.28,39.221,SD,syncSD,
+68.08,66.021,FLAG,inFlight,false
+68.08,66.021,FLAG,postFlight,true
+68.08,66.021,FLAG,liftoff,false
+68.08,66.021,FLAG,touchdown,true
+68.08,66.021,RADIO_EVENT,Touchdown,27
