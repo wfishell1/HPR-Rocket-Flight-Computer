@@ -36,6 +36,7 @@ struct VelocityHistory<const N: usize> {
     altitudes: [f32; N],
     timestamps_us: [u32; N],
     index: usize,
+    updated_index: usize
 }
 
 impl<const N: usize> VelocityHistory<N> {
@@ -45,9 +46,30 @@ impl<const N: usize> VelocityHistory<N> {
             altitudes: [0.0; N],
             timestamps_us: [0; N],
             index: 0,
+            updated_index:0
         };
     }
+    fn update(&mut self, smooth_alt:f32, _sample_time_us: u32) -> f32 {
+        let elapsed_us =
+            _sample_time_us.wrapping_sub(self.timestamps_us[self.updated_index]);
+        let elapsed_s = elapsed_us as f32 * 1e-6;
+        let rV = (smooth_alt - self.altitudes[self.updated_index]) / elapsed_s;
+        self.altitudes[self.index] = smooth_alt;
+        self.timestamps_us[self.index] = _sample_time_us;
+        self.index = (self.index + 1) % N;
+        return rV;
+    }
+    fn update_index(&mut self, phase : Phase) {
+        if matches!(phase, Phase::Apogee) {
+                self.updated_index = self.index;
+        }
+        else {
+            self.updated_index = (N + self.index - 10) % N;
+        }
+
+    }
 }
+
 
 pub struct BarometerState {
     base_alt: f32,
@@ -55,6 +77,8 @@ pub struct BarometerState {
     smooth_alt: f32,
     vel: f32,
     new_samp: bool,
+    max_vel: f32,
+    max_alt: f32,
 
     baseline_history: AltitudeHistory<30>,
     altitude_history: AltitudeHistory<10>,
@@ -70,6 +94,8 @@ impl BarometerState {
             smooth_alt: 0.0,
             vel: 0.0,
             new_samp: false,
+            max_vel: 0.0,
+            max_alt: 0.0,
             //these bottom fields are static variables from the process_sample method though I don't
             //see any reason why they shouldn't just be added as fields here
     
@@ -91,17 +117,25 @@ impl BarometerState {
         }
 
         self.alt = raw_altitude_m - self.base_alt;
+        if (self.alt > self.max_alt && ! (matches!(phase, Phase::Apogee))) {
+            self.max_alt = self.alt;
+        }
         self.smooth_alt = self.altitude_history.update(self.alt);
+
         //Velocity updates go here
+        self.velocity_history.update_index(phase);
+        self.vel = self.velocity_history.update(self.smooth_alt, _sample_time_us);
+        if (self.vel > self.max_vel) {
+            self.max_vel = self.vel;
+        }
+        
+        
 
 
 
     }
 
 }
-
-
-
 
 
 
