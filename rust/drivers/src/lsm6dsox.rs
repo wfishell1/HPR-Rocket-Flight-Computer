@@ -12,7 +12,7 @@ const OUTX_L_G: u8 = 0x22;
 const WHO_AM_I_VAL: u8 = 0x6C;
 
 // chip constants
-const ACCEL_SCALE: f32 = 0.000488;      // g per count
+pub const ACCEL_SCALE: f32 = 0.000488;      // g per count
 const ACCEL_SATURATION: i16 = 32112;    // 98% of full scale
 const GYRO_SCALE: f32 = 0.07;           // °/s per count
 const GYRO_SATURATION: i16 = 32112;     // 98% of full scale

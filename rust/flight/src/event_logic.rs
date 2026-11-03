@@ -551,29 +551,45 @@ mod tests{
         assert_eq!(rust_events, cpp_events);
     }
 
-    //harness run: --profile S --main-ft 656.16
-    #[test]
-    fn replay_single_stage(){
+    //running single stage and dual stage records with different barometer frequencies
+    //to test how well the rocket does with the different baro-hz (real MS5611 is ~100 Hz)
+    //traces are named <record>_baro<hz>hz_cpp_{trace,events}.csv
+
+    //harness run: --profile S --main-ft 656.16 --baro-hz <hz>
+    fn replay_single_stage(baro_hz: u32){
         let settings = Settings{
             main_deploy_alt_m: 656.16 / 3.2808,
             ..Settings::default()
         };
-        replay("Single_Stage_High_Powered_Rocket_Test_sensors_cpp_trace.csv",
-               "Single_Stage_High_Powered_Rocket_Test_sensors_cpp_events.csv", settings);
+        let name = format!("Single_Stage_High_Powered_Rocket_Test_sensors_baro{}hz", baro_hz);
+        replay(&format!("{}_cpp_trace.csv", name), &format!("{}_cpp_events.csv", name), settings);
     }
 
-    //harness run: --profile 2 (default --main-ft 700), harness.cpp:242-258
-    #[test]
-    fn replay_two_stage(){
+    //harness run: --profile 2 --baro-hz <hz> (default --main-ft 700), harness.cpp:242-258
+    fn replay_two_stage(baro_hz: u32){
         let settings = Settings{
             main_deploy_alt_m: 700.0 / 3.2808,
             flight_profile: FlightProfile::TwoStage{booster_separation_delay_us: 500_000, sustainer_fire_delay_us: 500_000},
             pyro_roles: [PyroRole::BoosterSeparation, PyroRole::SustainerIgnition, PyroRole::Apogee, PyroRole::Main],
             ..Settings::default()
         };
-        replay("2_Stage_High_Powered_Rocket_Test_sensors_cpp_trace.csv",
-               "2_Stage_High_Powered_Rocket_Test_sensors_cpp_events.csv", settings);
+        let name = format!("2_Stage_High_Powered_Rocket_Test_sensors_baro{}hz", baro_hz);
+        replay(&format!("{}_cpp_trace.csv", name), &format!("{}_cpp_events.csv", name), settings);
     }
+
+    #[test]
+    fn replay_single_stage_baro_25hz(){ replay_single_stage(25); }
+    #[test]
+    fn replay_single_stage_baro_50hz(){ replay_single_stage(50); }
+    #[test]
+    fn replay_single_stage_baro_100hz(){ replay_single_stage(100); }
+
+    #[test]
+    fn replay_two_stage_baro_25hz(){ replay_two_stage(25); }
+    #[test]
+    fn replay_two_stage_baro_50hz(){ replay_two_stage(50); }
+    #[test]
+    fn replay_two_stage_baro_100hz(){ replay_two_stage(100); }
 
     #[test]
     fn liftoff_detected_above_g_trigger(){

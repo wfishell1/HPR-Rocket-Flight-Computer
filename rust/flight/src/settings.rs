@@ -1,7 +1,9 @@
 // Flight settings, fixed for the whole flight.
 // This is set in the setting.txt file in main code originally
-//setting it as a struct to avoid on the fly parsing at runtim
+//setting it as a struct to avoid on the fly parsing at runtime
 //number of pyros in the rocket
+use drivers::lsm6dsox::ACCEL_SCALE;
+
 pub const N: usize = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,6 +72,8 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
+        // C++: g = (int16_t)(1.0 / accel.gainX); gTrigger = 2.5 * g
+        let counts_per_g = (1.0 / ACCEL_SCALE) as i16;
         Settings {
             rcd_time_us: 900_000_000,
             main_deploy_alt_m: 200.0,      
@@ -77,8 +81,8 @@ impl Default for Settings {
             //however the computer uses meters THIS NEEDS TO BE UPDATED
             apogee_delay_us: 0,
             fire_time_us: 500_000, 
-            counts_per_g: 2048,
-            g_trigger_counts: 5120,
+            counts_per_g,
+            g_trigger_counts: (2.5 * counts_per_g as f32) as i16,
             detect_liftoff_time_us: 500_000,
             threshold_vel_mps: 35.0,
             threshold_alt_m: 61.0,
