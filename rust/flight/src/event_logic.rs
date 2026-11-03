@@ -6,7 +6,6 @@ use log::{debug};
 pub enum Phase{
     #[default]
     Pad,
-    BoostUnconfirmed,
     Boost,
     BurnoutCheck,
     Coast,
@@ -48,6 +47,7 @@ pub struct TickOutput{
 #[derive(Clone, Copy)]
 pub struct Flight{
     pub flight_phase: Phase,
+    pub false_liftoff_check: bool,
     stages: StageState,
     pub pyro_n: [(bool, u32); N],
     pub sync_apogee: bool,
@@ -66,6 +66,7 @@ impl Flight{
     pub fn new(settings: Settings) -> Self {
         Flight {
             flight_phase: Phase::Pad,
+            false_liftoff_check: false,
             stages: match settings.flight_profile{
                 FlightProfile::Single => StageState::Single,
                 FlightProfile::Booster => StageState::Booster,
@@ -122,7 +123,8 @@ impl Flight{
     //flight_time_us is expected to count from this liftoff (fltTime.liftoff), the caller zeroes it
     pub fn liftoff_check(&mut self) -> Option<RadioEvent>{
         if self.flight_phase==Phase::Pad && self.sensor_history[0].accel_z > self.settings.g_trigger_counts{
-            self.flight_phase=Phase::BoostUnconfirmed;
+            self.flight_phase=Phase::Boost;
+            self.false_liftoff_check=true;
             return Some(RadioEvent::Liftoff);
         }
         None
@@ -132,11 +134,11 @@ impl Flight{
         self.sensor_history[0]=*current_input;
     }
     pub fn false_trigger(&mut self) -> Option<RadioEvent>{
-        if self.flight_phase==Phase::BoostUnconfirmed{
+        if self.false_liftoff_check{
             if self.sensor_history[0].flight_time_us > self.settings.detect_liftoff_time_us
             || self.sensor_history[0].accel_vel> self.settings.threshold_vel_mps
             || self.sensor_history[0].accel_alt > self.settings.threshold_alt_m {
-                self.flight_phase=Phase::Boost;
+                self.false_liftoff_check=false;
             }
             if self.sensor_history[0].accel_z < self.settings.g_trigger_counts
             && self.sensor_history[0].accel_vel < self.settings.threshold_vel_mps
@@ -159,10 +161,9 @@ impl Flight{
             self.flight_phase=Phase::BurnoutCheck;
             self.burnout_time=self.sensor_history[0].flight_time_us;
             return Some(RadioEvent::BoosterBurnout);
-
-            }
-        None
         }
+        None
+    }
     pub fn booster_motor_burp(&mut self) -> Option<RadioEvent>{
         if self.flight_phase==Phase::BurnoutCheck{
             if self.sensor_history[0].flight_time_us - self.burnout_time>self.settings.booster_burp_time_us(){
@@ -185,7 +186,7 @@ impl Flight{
     }
     pub fn two_stage_flight_check_fire_seperation_charge(&mut self) -> Option<RadioEvent>{
         if let (FlightProfile::TwoStage{booster_separation_delay_us, ..}, StageState::TwoStage{booster_separation_time, ..}) = (self.settings.flight_profile, &mut self.stages){
-            if booster_separation_time.is_none() && self.flight_phase==Phase::Coast
+            if booster_separation_time.is_none() && self.flight_phase==Phase::Coast && !self.false_liftoff_check
             && self.sensor_history[0].flight_time_us - self.burnout_time > booster_separation_delay_us{
                 *booster_separation_time=Some(self.sensor_history[0].flight_time_us);
             }
@@ -214,7 +215,7 @@ impl Flight{
         StageState::AirStart{airstart1, airstart2}) = (self.settings.flight_profile, &self.stages){
             if airstart1.fire_check_time.is_none()
             && ((as1_cfg.trigger == AirstartTrigger::Ignition
-                && self.flight_phase != Phase::BoostUnconfirmed
+                && !self.false_liftoff_check
                 && now > as1_cfg.delay_us)
             || (as1_cfg.trigger == AirstartTrigger::Burnout
                 && self.flight_phase >= Phase::BurnoutCheck
@@ -334,7 +335,7 @@ impl Flight{
         [accel_apogee, baro_apogee,fusion_apogee]
     }
     pub fn check_apogee_event(&mut self) -> Option<RadioEvent>{
-        if self.flight_phase == Phase::Coast && !self.pyro_global() && self.apogee_functions().contains(&true){
+        if self.flight_phase == Phase::Coast && !self.pyro_global() && self.apogee_functions().contains(&true) && !self.false_liftoff_check{
             self.flight_phase = Phase::Apogee;
             self.apogee_time = Some(self.sensor_history[0].flight_time_us);
             if self.settings.flight_profile == FlightProfile::Booster{
@@ -497,7 +498,7 @@ mod tests{
     use std::fs;
 
     fn openrocket_file(name: &str) -> String{
-        format!("{}/../OpenRocket/{}", env!("CARGO_MANIFEST_DIR"), name)
+        format!("{}/../../OpenRocket/{}", env!("CARGO_MANIFEST_DIR"), name)
     }
 
     fn replay(trace_csv: &str, events_csv: &str, settings: Settings){
