@@ -1,0 +1,3 @@
+[workspace]
+members = ["drivers", "flight"]
+resolver = "2"
