@@ -1,3 +1,19 @@
+#[derive(Clone, Copy, Default)]
+pub struct SensorInputs{
+    pub flight_time_us: u32,
+    pub accel_z: i16,
+    pub accel_now: f32,
+    pub accel_vel: f32,
+    pub accel_alt: f32,
+    pub fusion_vel: f32,
+    pub baro_alt: f32,
+    pub baro_base_alt: f32,
+    pub baro_vel: f32,
+    pub baro_touchdown: u8,
+    pub alt_ok: bool,
+    pub rotn_ok: bool,
+}
+
 // Flight settings, fixed for the whole flight.
 // This is set in the setting.txt file in main code originally
 //setting it as a struct to avoid on the fly parsing at runtim

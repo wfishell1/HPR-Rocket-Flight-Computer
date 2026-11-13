@@ -4,6 +4,10 @@ use drivers::lsm6dsox::{self, Lsm6dsoxDriver};
 use drivers::ms5611::{self, Ms5611Driver};
 use drivers::types::Raw3;
 use std::cell::RefCell;
+use hpr_rust::acceleration::AccelerationState;
+use hpr_rust::event_logic::{Flight, Phase};
+use hpr_rust::flight_clock::FlightClock;
+use hpr_rust::settings::{SensorInputs, Settings};
 mod orient;
 enum Driver<'a, I, P> {
     Imu(&'a RefCell<Lsm6dsoxDriver<I>>),
@@ -138,6 +142,57 @@ fn run_polling(sensors: &mut [impl Sensor], mut clock: impl FnMut() -> u32) {
 }
 
 fn main() {
-    //setup_sensors
-    //run_polling
+    let mut sensors: [AG_Sensor<_, _>; 3] = todo!("Initialize sensors with setup_sensors");
+    let mut clock = || -> u32 { todo!("Read the microsecond clock") };
+    let mut flight = Flight::new(Settings::default());
+    let mut flight_clock = FlightClock::new();
+    let mut acceleration = AccelerationState::new();
+    let mut inputs = SensorInputs::default();
+
+    run_polling(&mut sensors, &mut clock);
+    let now_us = clock();
+
+    let Some(oriented) = sensors[0].oriented else {
+        return;
+    };
+    let Ok(accel_z) = i16::try_from(oriented[2]) else {
+        return;
+    };
+    let accel_scale = match &sensors[0].driver {
+        Driver::Imu(driver) => driver.borrow().accel_scale(),
+        Driver::Barometer(_) => return,
+    };
+
+    inputs.accel_z = accel_z;
+    flight.update_current_info(&inputs);
+
+    if flight.flight_phase == Phase::Pad {
+        flight.liftoff_check();
+        if flight.flight_phase == Phase::BoostUnconfirmed {
+            flight_clock.start(now_us);
+            acceleration = AccelerationState::new();
+        }
+    }
+
+    if matches!(flight.flight_phase, Phase::Pad | Phase::Landed | Phase::TimedOut) {
+        return;
+    }
+
+    if let Some(dt_us) = flight_clock.advance(now_us) {
+        let accel_now = (oriented[2] - i32::from(flight.settings.counts_per_g)) as f32
+            * accel_scale
+            * 9.80665;
+
+        if matches!(flight.flight_phase, Phase::Drogue | Phase::Main) {
+            acceleration.accel_now = accel_now;
+        } else {
+            acceleration.update(accel_now, dt_us);
+        }
+
+        inputs.flight_time_us = flight_clock.flight_time_us;
+        inputs.accel_now = acceleration.accel_now;
+        inputs.accel_vel = acceleration.accel_vel;
+        inputs.accel_alt = acceleration.accel_alt;
+        flight.update_current_info(&inputs);
+    }
 }
