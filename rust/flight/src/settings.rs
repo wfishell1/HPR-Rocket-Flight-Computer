@@ -54,6 +54,7 @@ impl TryFrom<char> for PyroRole {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
     pub rcd_time_us: u32,
+    pub max_angle_tenths: i64,
     pub main_deploy_alt_m: f32,
     pub apogee_delay_us: u32,
     pub fire_time_us: u32,
@@ -76,6 +77,7 @@ impl Default for Settings {
         let counts_per_g = (1.0 / ACCEL_SCALE) as i16;
         Settings {
             rcd_time_us: 900_000_000,
+            max_angle_tenths: 200,
             main_deploy_alt_m: 200.0,      
             // harness --main-ft 656.16, for simujlation tranlsation we use ft
             //however the computer uses meters THIS NEEDS TO BE UPDATED
