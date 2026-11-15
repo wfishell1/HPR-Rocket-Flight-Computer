@@ -1,17 +1,19 @@
 use crate::types::Raw3;
 use crate::register::{Error, RegisterController};
 
-const WHO_AM_I_ADDR: u8 = 0x0F;
+mod reg {
+    pub const WHO_AM_I: u8 = 0x0F;
+    pub const CTRL1: u8 = 0x20;
+    pub const CTRL4: u8 = 0x23;
+    pub const OUT_X_L: u8 = 0x28;
+}
 const WHO_AM_I_VAL: u8 = 0x32;
-const CTRL1_ADDR: u8 = 0x20;
-const CTRL4_ADDR: u8 = 0x23;
-const OUT_X_L: u8 = 0x28;
 const CTRL1_VAL: u8 = 0b00111111;
 const CTRL4_VAL: u8 = 0x00;
 
 const CONFIG: &[(u8, u8)] = &[
-    (CTRL4_ADDR, CTRL4_VAL),
-    (CTRL1_ADDR, CTRL1_VAL),
+    (reg::CTRL4, CTRL4_VAL),
+    (reg::CTRL1, CTRL1_VAL),
 ];
 
 pub const ACCEL_SCALE: f32 = 0.049;
@@ -24,7 +26,7 @@ pub struct H3lis331dlDriver<R> {
 
 impl<R: RegisterController> H3lis331dlDriver<R> {
     pub fn new(mut reg_ctrl: R) -> Result<Self, Error<R::Error>> {
-        reg_ctrl.check_id(WHO_AM_I_ADDR, WHO_AM_I_VAL)?;
+        reg_ctrl.check_id(reg::WHO_AM_I, WHO_AM_I_VAL)?;
 
         reg_ctrl.configure(CONFIG)?;
 
@@ -32,7 +34,7 @@ impl<R: RegisterController> H3lis331dlDriver<R> {
     }
 
     pub fn read(&mut self) -> Result<Raw3, Error<R::Error>> {
-        let bytes = self.reg_ctrl.read_bytes::<6>(OUT_X_L)?;
+        let bytes = self.reg_ctrl.read_bytes::<6>(reg::OUT_X_L)?;
         Ok(parse(&bytes))
     }
 
@@ -78,7 +80,7 @@ mod tests {
 
     /// The full startup conversation, in the order `new` does it.
     fn init_expectations() -> Vec<Transaction<u8>> {
-        let mut tx = spi_read(WHO_AM_I_ADDR | 0x80, vec![WHO_AM_I_VAL]);
+        let mut tx = spi_read(reg::WHO_AM_I | 0x80, vec![WHO_AM_I_VAL]);
         for &(reg, val) in CONFIG {
             tx.extend(spi_write(reg, val));
             tx.extend(spi_read(reg | 0x80, vec![val]));
@@ -98,7 +100,7 @@ mod tests {
 
     #[test]
     fn new_fails_on_wrong_chip() {
-        let mut mock = Mock::new(&spi_read(WHO_AM_I_ADDR | 0x80, vec![0x00]));
+        let mut mock = Mock::new(&spi_read(reg::WHO_AM_I | 0x80, vec![0x00]));
 
         let result = H3lis331dlDriver::new(SpiBus::new(mock.clone(), MASKS));
 
@@ -117,7 +119,7 @@ mod tests {
     #[test]
     fn read_sets_inc_bit_and_parses() {
         let mut expectations = init_expectations();
-        expectations.extend(spi_read(OUT_X_L | 0x80 | 0x40, vec![0x30, 0x01, 0x00, 0x00, 0xF0, 0xFF]));
+        expectations.extend(spi_read(reg::OUT_X_L | 0x80 | 0x40, vec![0x30, 0x01, 0x00, 0x00, 0xF0, 0xFF]));
         let mut mock = Mock::new(&expectations);
 
         let mut driver = H3lis331dlDriver::new(SpiBus::new(mock.clone(), MASKS)).unwrap();

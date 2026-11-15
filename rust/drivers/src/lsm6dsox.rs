@@ -2,20 +2,22 @@ use crate::types::Raw3;
 use crate::register::{Error, RegisterController};
 
 // chip addresses
-const WHO_AM_I_ADDR: u8 = 0x0F;
-const CTRL1_XL_ADDR: u8 = 0x10;
-const CTRL2_G_ADDR: u8 = 0x11;
-const CTRL3_C_ADDR: u8 = 0x12;
-const OUTX_L_G: u8 = 0x22;
+mod reg {
+    pub const WHO_AM_I: u8 = 0x0F;
+    pub const CTRL1_XL: u8 = 0x10;
+    pub const CTRL2_G: u8 = 0x11;
+    pub const CTRL3_C: u8 = 0x12;
+    pub const OUTX_L_G: u8 = 0x22;
+}
 
 const CTRL1_XL_VAL: u8 = 0b10000100;
 const CTRL2_G_VAL: u8 = 0b10001100;
 const CTRL3_C_VAL: u8 = 0x44;
 
 const CONFIG: &[(u8, u8)] = &[
-    (CTRL3_C_ADDR, CTRL3_C_VAL),
-    (CTRL2_G_ADDR, CTRL2_G_VAL),
-    (CTRL1_XL_ADDR, CTRL1_XL_VAL),
+    (reg::CTRL3_C, CTRL3_C_VAL),
+    (reg::CTRL2_G, CTRL2_G_VAL),
+    (reg::CTRL1_XL, CTRL1_XL_VAL),
 ];
 
 // who am i expected value
@@ -51,7 +53,7 @@ pub struct Lsm6dsoxDriver<R> {
 
 impl<R: RegisterController> Lsm6dsoxDriver<R> {
     pub fn new(mut reg_ctrl: R) -> Result<Self, Error<R::Error>> {
-        reg_ctrl.check_id(WHO_AM_I_ADDR, WHO_AM_I_VAL)?;
+        reg_ctrl.check_id(reg::WHO_AM_I, WHO_AM_I_VAL)?;
 
         reg_ctrl.configure(CONFIG)?; 
 
@@ -59,7 +61,7 @@ impl<R: RegisterController> Lsm6dsoxDriver<R> {
     }
 
     pub fn read(&mut self) -> Result<Sample, Error<R::Error>> {
-        let bytes = self.reg_ctrl.read_bytes::<12>(OUTX_L_G)?;
+        let bytes = self.reg_ctrl.read_bytes::<12>(reg::OUTX_L_G)?;
         Ok(parse(&bytes))
     }
 
@@ -92,13 +94,13 @@ mod tests {
     /// The full startup conversation, in the order `new` does it.
     fn init_expectations() -> Vec<Transaction> {
         vec![
-            Transaction::write_read(ADDR, vec![WHO_AM_I_ADDR], vec![WHO_AM_I_VAL]),
-            Transaction::write(ADDR, vec![CTRL3_C_ADDR, CTRL3_C_VAL]),
-            Transaction::write_read(ADDR, vec![CTRL3_C_ADDR], vec![CTRL3_C_VAL]),
-            Transaction::write(ADDR, vec![CTRL2_G_ADDR, CTRL2_G_VAL]),
-            Transaction::write_read(ADDR, vec![CTRL2_G_ADDR], vec![CTRL2_G_VAL]),
-            Transaction::write(ADDR, vec![CTRL1_XL_ADDR, CTRL1_XL_VAL]),
-            Transaction::write_read(ADDR, vec![CTRL1_XL_ADDR], vec![CTRL1_XL_VAL]),
+            Transaction::write_read(ADDR, vec![reg::WHO_AM_I], vec![WHO_AM_I_VAL]),
+            Transaction::write(ADDR, vec![reg::CTRL3_C, CTRL3_C_VAL]),
+            Transaction::write_read(ADDR, vec![reg::CTRL3_C], vec![CTRL3_C_VAL]),
+            Transaction::write(ADDR, vec![reg::CTRL2_G, CTRL2_G_VAL]),
+            Transaction::write_read(ADDR, vec![reg::CTRL2_G], vec![CTRL2_G_VAL]),
+            Transaction::write(ADDR, vec![reg::CTRL1_XL, CTRL1_XL_VAL]),
+            Transaction::write_read(ADDR, vec![reg::CTRL1_XL], vec![CTRL1_XL_VAL]),
         ]
     }
 
@@ -114,7 +116,7 @@ mod tests {
 
     #[test]
     fn new_fails_on_wrong_chip() {
-        let expectations = [Transaction::write_read(ADDR, vec![WHO_AM_I_ADDR], vec![0x69])];
+        let expectations = [Transaction::write_read(ADDR, vec![reg::WHO_AM_I], vec![0x69])];
         let mut mock = Mock::new(&expectations);
 
         let result = Lsm6dsoxDriver::new(I2cBus::new(mock.clone(), ADDR));
@@ -126,9 +128,9 @@ mod tests {
     #[test]
     fn new_fails_when_first_setting_does_not_stick() {
         let expectations = [
-            Transaction::write_read(ADDR, vec![WHO_AM_I_ADDR], vec![WHO_AM_I_VAL]),
-            Transaction::write(ADDR, vec![CTRL3_C_ADDR, CTRL3_C_VAL]),
-            Transaction::write_read(ADDR, vec![CTRL3_C_ADDR], vec![0x00]), // chip ignored the write
+            Transaction::write_read(ADDR, vec![reg::WHO_AM_I], vec![WHO_AM_I_VAL]),
+            Transaction::write(ADDR, vec![reg::CTRL3_C, CTRL3_C_VAL]),
+            Transaction::write_read(ADDR, vec![reg::CTRL3_C], vec![0x00]), // chip ignored the write
         ];
         let mut mock = Mock::new(&expectations);
 
@@ -136,7 +138,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(Error::UnverifiedWrite { reg: CTRL3_C_ADDR, expected: CTRL3_C_VAL, found: 0x00 })
+            Err(Error::UnverifiedWrite { reg: reg::CTRL3_C, expected: CTRL3_C_VAL, found: 0x00 })
         ));
         mock.done();
     }
@@ -145,7 +147,7 @@ mod tests {
     fn new_fails_when_last_setting_does_not_stick() {
         let mut expectations = init_expectations();
         expectations.pop(); // drop the good CTRL1_XL read-back...
-        expectations.push(Transaction::write_read(ADDR, vec![CTRL1_XL_ADDR], vec![0x00])); // ...use a bad one
+        expectations.push(Transaction::write_read(ADDR, vec![reg::CTRL1_XL], vec![0x00])); // ...use a bad one
 
         let mut mock = Mock::new(&expectations);
 
@@ -153,14 +155,14 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(Error::UnverifiedWrite { reg: CTRL1_XL_ADDR, expected: CTRL1_XL_VAL, found: 0x00 })
+            Err(Error::UnverifiedWrite { reg: reg::CTRL1_XL, expected: CTRL1_XL_VAL, found: 0x00 })
         ));
         mock.done();
     }
 
     #[test]
     fn new_reports_bus_error() {
-        let expectations = [Transaction::write_read(ADDR, vec![WHO_AM_I_ADDR], vec![0x00])
+        let expectations = [Transaction::write_read(ADDR, vec![reg::WHO_AM_I], vec![0x00])
             .with_error(ErrorKind::Other)];
         let mut mock = Mock::new(&expectations);
 
@@ -195,7 +197,7 @@ mod tests {
         let mut expectations = init_expectations();
         expectations.push(Transaction::write_read(
             ADDR,
-            vec![OUTX_L_G],
+            vec![reg::OUTX_L_G],
             vec![1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0],
         ));
         let mut mock = Mock::new(&expectations);
@@ -212,7 +214,7 @@ mod tests {
     fn read_reports_bus_error() {
         let mut expectations = init_expectations();
         expectations.push(
-            Transaction::write_read(ADDR, vec![OUTX_L_G], vec![0; 12]).with_error(ErrorKind::Other),
+            Transaction::write_read(ADDR, vec![reg::OUTX_L_G], vec![0; 12]).with_error(ErrorKind::Other),
         );
         let mut mock = Mock::new(&expectations);
 

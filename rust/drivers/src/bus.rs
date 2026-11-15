@@ -18,6 +18,13 @@ pub trait DeviceBus {
         self.write_reg(reg, val)?;
         self.read_byte(reg)
     }
+
+    fn write_bytes(&mut self, reg: u8, data: &[u8]) -> Result<(), Self::Error> {
+        for &byte in data {
+            self.write_reg(reg, byte)?;
+        }
+        Ok(())
+    }
 }
 
 pub struct I2cBus<I> {
@@ -115,6 +122,13 @@ impl<S: SpiDevice> DeviceBus for SpiBus<S> {
 
     fn write_cmd(&mut self, cmd: u8) -> Result<(), Self::Error> {
         self.spi.write(&[cmd])
+    }
+
+    fn write_bytes(&mut self, reg: u8, data: &[u8]) -> Result<(), Self::Error> {
+        self.spi.transaction(&mut [
+            Operation::Write(&[reg | self.masks.write]),
+            Operation::Write(data),
+        ])
     }
 }
 
