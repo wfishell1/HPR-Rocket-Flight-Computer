@@ -197,3 +197,150 @@ impl<R: RegisterController> Sx127xDriver<R> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bus::SpiBus;
+    use embedded_hal_mock::eh1::delay::NoopDelay;
+    use embedded_hal_mock::eh1::digital::{Mock as PinMock, State, Transaction as PinTransaction};
+    use embedded_hal_mock::eh1::spi::{Mock, Transaction};
+
+    fn spi_read(reg: u8, data: Vec<u8>) -> Vec<Transaction<u8>> {
+        vec![
+            Transaction::transaction_start(),
+            Transaction::write_vec(vec![reg]),
+            Transaction::read_vec(data),
+            Transaction::transaction_end(),
+        ]
+    }
+
+    fn spi_write(reg: u8, val: u8) -> Vec<Transaction<u8>> {
+        vec![
+            Transaction::transaction_start(),
+            Transaction::write_vec(vec![reg | 0x80, val]),
+            Transaction::transaction_end(),
+        ]
+    }
+
+    fn spi_write_verified(reg: u8, val: u8) -> Vec<Transaction<u8>> {
+        let mut tx = spi_write(reg, val);
+        tx.extend(spi_read(reg, vec![val]));
+        tx
+    }
+
+    fn reset_pin() -> PinMock {
+        PinMock::new(&[
+            PinTransaction::set(State::High),
+            PinTransaction::set(State::Low),
+            PinTransaction::set(State::High),
+        ])
+    }
+
+    /// everything new says to the chip, in order
+    fn init_expectations() -> Vec<Transaction<u8>> {
+        let mut tx = spi_read(reg::VERSION, vec![VERSION_VAL]);
+        for &(reg, val) in CONFIG {
+            tx.extend(spi_write_verified(reg, val));
+        }
+        tx.extend(spi_write(reg::IRQ_FLAGS, CLEAR_FLAGS));
+        tx
+    }
+
+    /// everything send says to the chip for a given packet
+    fn send_expectations(data: &[u8]) -> Vec<Transaction<u8>> {
+        let mut tx = spi_write(reg::OP_MODE, LORA | Mode::Standby as u8);
+        tx.extend(spi_write(reg::IRQ_FLAGS, CLEAR_FLAGS));
+        tx.extend(spi_write(reg::FIFO_PTR, FIFO_START));
+        tx.extend([
+            Transaction::transaction_start(),
+            Transaction::write_vec(vec![reg::FIFO | 0x80]),
+            Transaction::write_vec(data.to_vec()),
+            Transaction::transaction_end(),
+        ]);
+        tx.extend(spi_write(reg::PAYLOAD_LEN, data.len() as u8));
+        tx.extend(spi_write(reg::OP_MODE, LORA | Mode::Tx as u8));
+        tx
+    }
+
+    /// driver that's already through new, with every later expectation queued up
+    fn driver(after_init: Vec<Transaction<u8>>) -> (Sx127xDriver<SpiBus<Mock<u8>>>, Mock<u8>) {
+        let mut expectations = init_expectations();
+        expectations.extend(after_init);
+        let mock = Mock::new(&expectations);
+        let mut reset = reset_pin();
+        let driver = Sx127xDriver::new(SpiBus::new(mock.clone(), MASKS), &mut reset, &mut NoopDelay::new()).unwrap();
+        reset.done();
+        (driver, mock)
+    }
+
+    #[test]
+    fn new_succeeds() {
+        let (_driver, mut mock) = driver(vec![]);
+        mock.done();
+    }
+
+    #[test]
+    fn new_fails_on_wrong_chip() {
+        let mut mock = Mock::new(&spi_read(reg::VERSION, vec![0x00]));
+        let mut reset = reset_pin();
+
+        let result = Sx127xDriver::new(SpiBus::new(mock.clone(), MASKS), &mut reset, &mut NoopDelay::new());
+
+        assert!(matches!(
+            result,
+            Err(InitError::Register(register::Error::WrongId { expected: VERSION_VAL, found: 0x00 }))
+        ));
+        mock.done();
+        reset.done();
+    }
+
+    #[test]
+    fn set_frequency_915mhz() {
+        // 915e6 * 2^19 / 32e6 = 0xE4C000
+        let mut tx = spi_write(reg::OP_MODE, LORA | Mode::Standby as u8);
+        tx.extend(spi_write_verified(reg::FRF_MSB, 0xE4));
+        tx.extend(spi_write_verified(reg::FRF_MID, 0xC0));
+        tx.extend(spi_write_verified(reg::FRF_LSB, 0x00));
+        let (mut driver, mut mock) = driver(tx);
+
+        driver.set_frequency(915_000_000).unwrap();
+        mock.done();
+    }
+
+    #[test]
+    fn set_power_high_uses_dac() {
+        // 20 dbm: dac on, then 20 - 3 - 2 = 15
+        let mut tx = spi_write_verified(reg::PA_DAC, PA_DAC_ON);
+        tx.extend(spi_write_verified(reg::PA_CONFIG, PA_BOOST | 15));
+        let (mut driver, mut mock) = driver(tx);
+
+        driver.set_power(20).unwrap();
+        mock.done();
+    }
+
+    #[test]
+    fn send_then_wait_for_done() {
+        let packet = [1, 2, 3];
+        let mut tx = send_expectations(&packet);
+        tx.extend(spi_read(reg::IRQ_FLAGS, vec![0x00]));    // not done yet
+        tx.extend(spi_read(reg::IRQ_FLAGS, vec![TX_DONE])); // done
+        tx.extend(spi_write(reg::IRQ_FLAGS, CLEAR_FLAGS));
+        let (mut driver, mut mock) = driver(tx);
+
+        driver.send(&packet).unwrap();
+        assert!(matches!(driver.send(&packet), Err(Error::Busy))); // no bus traffic
+        assert!(!driver.is_done().unwrap());
+        assert!(driver.is_done().unwrap());
+        assert!(driver.is_done().unwrap()); // not transmitting, no bus traffic
+        mock.done();
+    }
+
+    #[test]
+    fn send_rejects_long_packet() {
+        let (mut driver, mut mock) = driver(vec![]);
+
+        assert!(matches!(driver.send(&[0; 256]), Err(Error::PacketTooLong { len: 256 })));
+        mock.done();
+    }
+}
