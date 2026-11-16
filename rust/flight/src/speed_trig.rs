@@ -53,6 +53,41 @@ pub fn speed_arc_tan(v: f64) -> i64 {
     rad_to_tenths(libm::atan(v))
 }
 
+/// `speedSin()` (Speed_Trig.ino:431): sine of an angle given in tenths of a degree.
+/// Any angle works; the C++ folds it into 0..3600 first.
+pub fn speed_sin(rotn: i64) -> f64 {
+    libm::sin((rotn as f64 / 10.0).to_radians())
+}
+
+/// `speedCos()` (Speed_Trig.ino:485): cosine of an angle given in tenths of a degree.
+pub fn speed_cos(rotn: i64) -> f64 {
+    libm::cos((rotn as f64 / 10.0).to_radians())
+}
+
+/// `speedArcCos()` (Speed_Trig.ino:504): angle whose cosine is `v`.
+/// Returns tenths of a degree, 0..=1800. Inputs outside [-1, 1] are clamped.
+/// Fixes a C++ bug: the binary search treats the decreasing `Cos` table as increasing,
+/// so it returns 900 for 1.0, 0 for 0.0, and nonsense in between. Only `magRotn()`
+/// (never called) uses it, so no C++ output depends on the broken values.
+pub fn speed_arc_cos(v: f64) -> i64 {
+    rad_to_tenths(libm::acos(clamp_unit(v)))
+}
+
+/// `cosSmallAngle()` (Speed_Trig.ino:552): cosine of a small angle in radians.
+/// The C++ uses a Taylor series to avoid `cosf` on slow boards. Its small-angle cutoff
+/// compares against `Cos[7]` (~0.99993) instead of `Sin[7]` (0.7° in radians), so the
+/// rough `1 - x²/2` is used up to ~57° (off by up to ~4%). The FPU makes `cos` cheap,
+/// so this just calls it. Only `getDCM2DRotn()` uses it.
+pub fn cos_small_angle(rad: f64) -> f64 {
+    libm::cos(rad)
+}
+
+/// `sinSmallAngle()` (Speed_Trig.ino:591): sine of a small angle in radians.
+/// Same idea as `cos_small_angle`; the C++ cutoffs here are correct, so results match.
+pub fn sin_small_angle(rad: f64) -> f64 {
+    libm::sin(rad)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,5 +146,63 @@ mod tests {
         close(speed_atan2(1.0, 0.0), 900);
         close(speed_atan2(0.0, -1.0), 1800);
         assert_eq!(speed_atan2(0.0, 0.0), 0);
+    }
+
+    #[test]
+    fn sin_cos_all_quarters() {
+        let eq = |a: f64, b: f64| assert!((a - b).abs() < 1e-12, "got {}, want {}", a, b);
+        eq(speed_sin(0), 0.0);
+        eq(speed_sin(300), 0.5);
+        eq(speed_sin(900), 1.0);
+        eq(speed_sin(1500), 0.5);
+        eq(speed_sin(2700), -1.0);
+        eq(speed_sin(-300), -0.5);
+        eq(speed_sin(3900), 0.5); // past one full turn
+        eq(speed_cos(0), 1.0);
+        eq(speed_cos(600), 0.5);
+        eq(speed_cos(1200), -0.5);
+        eq(speed_cos(1800), -1.0);
+        eq(speed_cos(-600), 0.5);
+    }
+
+    #[test]
+    fn arc_cos_known_values() {
+        close(speed_arc_cos(1.0), 0);
+        close(speed_arc_cos(0.5), 600);
+        close(speed_arc_cos(0.0), 900);
+        close(speed_arc_cos(-0.5), 1200);
+        close(speed_arc_cos(-1.0), 1800);
+        assert_eq!(speed_arc_cos(1.000_000_1), 0);
+    }
+
+    #[test]
+    fn arc_sin_arc_cos_round_trip() {
+        for a in -900..=900 {
+            close(speed_arc_sin(speed_sin(a)), a);
+        }
+        for a in 0..=1800 {
+            close(speed_arc_cos(speed_cos(a)), a);
+        }
+    }
+
+    #[test]
+    fn small_angle_matches_series_below_45_degrees() {
+        // The C++ Taylor series (correct branch), as a reference for |x| < pi/4.
+        let cos_series = |x: f64| {
+            let x2 = x * x;
+            1.0 - x2 / 2.0 + x2 * x2 / 24.0 - x2 * x2 * x2 / 720.0
+                + x2 * x2 * x2 * x2 / 40320.0
+                - x2 * x2 * x2 * x2 * x2 / 3628800.0
+        };
+        let sin_series = |x: f64| {
+            let x2 = x * x;
+            x - x * x2 / 6.0 + x * x2 * x2 / 120.0 - x * x2 * x2 * x2 / 5040.0
+                + x * x2 * x2 * x2 * x2 / 362880.0
+        };
+        for i in -78..=78 {
+            let x = i as f64 / 100.0;
+            assert!((cos_small_angle(x) - cos_series(x)).abs() < 1e-8);
+            assert!((sin_small_angle(x) - sin_series(x)).abs() < 1e-8);
+        }
     }
 }
