@@ -11,3 +11,4 @@ pub mod h3lis331dl;
 pub mod lis3mdl;
 pub mod pyro;
 pub mod sx127x;
+pub mod ublox;
