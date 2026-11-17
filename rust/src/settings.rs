@@ -1,3 +1,78 @@
+pub const N: usize = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AirstartTrigger {
+    Ignition,
+    Burnout,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AirstartConfig {
+    pub trigger: AirstartTrigger,
+    pub delay_us: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FlightProfile {
+    Single,
+    TwoStage { booster_separation_delay_us: u32, sustainer_fire_delay_us: u32 },
+    AirStart {
+        booster_separation_delay_us: u32,
+        airstart1: AirstartConfig,
+        airstart2: AirstartConfig,
+    },
+    Booster,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PyroRole {
+    Apogee,
+    Main,
+    BoosterSeparation,
+    SustainerIgnition,
+    Airstart1,
+    Airstart2,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RadioEvent {
+    Preflight = 0,
+    Liftoff = 1,
+    BoosterBurnout = 2,
+    Apogee = 3,
+    FireApogee = 4,
+    Separation = 5,
+    FireMains = 6,
+    UnderChute = 7,
+    EjectBooster = 8,
+    FireSustainer = 9,
+    SustainerIgnition = 10,
+    SustainerBurnout = 11,
+    FireAirstart1 = 12,
+    Airstart1Ignition = 13,
+    Airstart1Burnout = 14,
+    FireAirstart2 = 15,
+    Airstart2Ignition = 16,
+    Airstart2Burnout = 17,
+    NoFireRotnLimit = 18,
+    NoFireAltLimit = 19,
+    NoFireRotnAltLimit = 20,
+    BoosterApogee = 21,
+    FireBoosterApogee = 22,
+    BoosterSeparation = 23,
+    FireBoosterMains = 24,
+    BoosterUnderChute = 25,
+    TimeLimit = 26,
+    Touchdown = 27,
+    PowerLossRestart = 28,
+    BoosterTouchdown = 29,
+    BoosterPreflight = 30,
+    BoosterTimeLimit = 31,
+    BoosterPowerLoss = 32,
+}
+
 #[derive(Clone, Copy, Default)]
 pub struct SensorInputs{
     pub flight_time_us: u32,
@@ -20,6 +95,7 @@ pub struct SensorInputs{
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
     pub rcd_time_us: u32,
+    pub max_angle_tenths: i64,
     pub main_deploy_alt_m: f32,
     pub apogee_delay_us: u32,
     pub fire_time_us: u32,
@@ -29,14 +105,17 @@ pub struct Settings {
     pub threshold_vel_mps: f32,
     pub threshold_alt_m: f32,
     pub clear_rail_time_us: u32,
-    pub booster_burp_time_us: u32,
     pub touchdown_trigger: u8,
+    pub flight_profile: FlightProfile,
+    pub pyro_roles: [PyroRole; N],
+    pub test_mode: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Settings {
             rcd_time_us: 900_000_000,
+            max_angle_tenths: 200,
             main_deploy_alt_m: 200.0,      
             // harness --main-ft 656.16, for simujlation tranlsation we use ft
             //however the computer uses meters THIS NEEDS TO BE UPDATED
@@ -48,8 +127,22 @@ impl Default for Settings {
             threshold_vel_mps: 35.0,
             threshold_alt_m: 61.0,
             clear_rail_time_us: 250_000,
-            booster_burp_time_us: 100_000,
             touchdown_trigger: 5,
+            flight_profile: FlightProfile::Single,
+            pyro_roles: [PyroRole::None, PyroRole::None, PyroRole::Apogee, PyroRole::Main],
+            test_mode: false,
+        }
+    }
+}
+
+impl Settings {
+    // Upstream: two-stage burp window follows separation delay; other profiles use 100 ms.
+    pub fn booster_burp_time_us(&self) -> u32 {
+        match self.flight_profile {
+            FlightProfile::TwoStage { booster_separation_delay_us, .. } => {
+                1_000_000.min(booster_separation_delay_us.saturating_sub(10_000))
+            }
+            _ => 100_000,
         }
     }
 }

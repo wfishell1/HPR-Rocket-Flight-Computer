@@ -3,3 +3,8 @@ pub mod event_logic;
 pub mod baro_samp;
 pub mod flight_clock;
 pub mod acceleration;
+pub mod rotations;
+pub mod speed_trig;
+pub mod calibration;
+pub mod sensors;
+mod orient;

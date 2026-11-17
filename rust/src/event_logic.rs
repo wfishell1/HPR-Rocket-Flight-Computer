@@ -97,7 +97,7 @@ impl Flight{
         for pyro in self.pyro_n{
             if pyro.0{
                 return true;
-            }ƒa
+            }
         }
         false
     }

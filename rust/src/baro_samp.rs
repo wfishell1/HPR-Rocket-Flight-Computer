@@ -1,12 +1,11 @@
 use crate::event_logic::Phase;
 
-fn update_average<const N: usize>(buffer: &mut [f32; N], sum: f32, index: usize, sample: f32) -> (f32, f32, usize) {
-    assert!(N > 0);
+pub(crate) fn update_average<const N: usize>(buffer: &mut [f32; N], sum: f32, index: usize, sample: f32, sample_count: usize) -> (f32, f32, usize) {
     let new_sum = sum - buffer[index] + sample;
     buffer[index] = sample;
     let next_index = (index + 1) % N;
 
-    return (new_sum / N as f32, new_sum, next_index);
+    return (new_sum / sample_count as f32, new_sum, next_index);
 }
 
 struct AltitudeHistory<const N: usize> {
@@ -27,7 +26,7 @@ impl<const N: usize> AltitudeHistory<N> {
 
     fn update(&mut self, sample: f32) -> f32 {
         let average;
-        (average, self.sum, self.index) = update_average(&mut self.buffer, self.sum, self.index, sample);
+        (average, self.sum, self.index) = update_average(&mut self.buffer, self.sum, self.index, sample, N);
         return average;
     }
 }
@@ -140,9 +139,6 @@ impl BarometerState {
     }
 
 }
-
-
-
 
 
 
